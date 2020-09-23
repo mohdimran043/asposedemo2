@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Aspose.Words;
@@ -18,79 +19,104 @@ namespace WaterMark.Apose.Controllers
     [ApiController]
     public class WaterMarkController : ControllerBase
     {
-        [HttpPost("watermark")]
-        public IActionResult InsertWaterMark()
+        [HttpPost("insert")]
+        public IActionResult InsertWaterMark([FromBody] JObject rqhdr)
         {
             try
             {
-                string sourceFileName = @"C:\Users\Mohd\Source\Repos\WaterMark.Apose\WaterMark.Apose\download\demo.docx";
-                string destFileName = @"C:\Users\Mohd\Source\Repos\WaterMark.Apose\WaterMark.Apose\download\demo222.docx";
-                string bookMarkImage = @"C:\Users\Mohd\Source\Repos\WaterMark.Apose\WaterMark.Apose\download\watmark.jpg";
+                string sourcefilepath = rqhdr["sourcefilepath"] != null ? rqhdr["sourcefilepath"].ToString() : "";
+                string destfilepath = rqhdr["destfilepath"] != null ? rqhdr["destfilepath"].ToString() : "";
+                string watermarkimagepath = rqhdr["watermarkimagepath"] != null ? rqhdr["watermarkimagepath"].ToString() : "";
                 bool greyScale = false;
                 double zoom = 100;
                 double imageAngle = 0;
-
-
-
-                var doc = new Document(sourceFileName);
-                var watermark = new Shape(doc, ShapeType.Rectangle)
+                if (!string.IsNullOrEmpty(sourcefilepath) && !string.IsNullOrEmpty(watermarkimagepath) && !string.IsNullOrEmpty(destfilepath)
+                    && System.IO.File.Exists(sourcefilepath) && System.IO.File.Exists(watermarkimagepath))
                 {
-                    Rotation = imageAngle,
-                    RelativeHorizontalPosition = RelativeHorizontalPosition.Page,
-                    RelativeVerticalPosition = RelativeVerticalPosition.Page,
-                    WrapType = WrapType.None,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    ZOrder = -10000, // Appear behind other images
-                    BehindText = true,
-                    Name = "WaterMark"
-                };
+                    setLicense();
+                    var doc = new Document(sourcefilepath);
+                    var watermark = new Shape(doc, ShapeType.Rectangle)
+                    {
+                        Rotation = imageAngle,
+                        RelativeHorizontalPosition = RelativeHorizontalPosition.Page,
+                        RelativeVerticalPosition = RelativeVerticalPosition.Page,
+                        WrapType = WrapType.None,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        ZOrder = -10000, // Appear behind other images
+                        BehindText = true,
+                        Name = "WaterMark"
+                    };
 
-                //var imagefilename = Config.Configuration.WorkingDirectory + imageFolderName + "/" + imageFileName;
-                //if (!System.IO.File.Exists(imagefilename))
-                //    imagefilename = Config.Configuration.OutputDirectory + imageFolderName + "/" + imageFileName;
+                    using (FileStream fs = new FileStream(watermarkimagepath, FileMode.Open, FileAccess.Read))
+                    {
+                        using (Image original = Image.FromStream(fs))
+                        {
+                            var image = Image.FromFile(watermarkimagepath);
+                            watermark.ImageData.SetImage(SKBitmap.Decode(watermarkimagepath));
+                            // watermark.ImageData.SetImage(ResizeImage(image, zoom / 100));
+                            watermark.ImageData.GrayScale = greyScale;
+                            AddWatermark(doc, watermark);
+                            doc.Save(destfilepath);
+                        }
+                    }
 
-                var image = Image.FromFile(bookMarkImage);
-                watermark.ImageData.SetImage(SKBitmap.Decode(bookMarkImage));
-                // watermark.ImageData.SetImage(ResizeImage(image, zoom / 100));
-                watermark.ImageData.GrayScale = greyScale;
+                    return Ok("Succes");
+                }
 
-                AddWatermark(doc, watermark);
 
-                doc.Save(destFileName);
-                return Ok(null);
+                ///  return Ok("Invalid Paramters");
+                return Problem("Invalid Paramters", "watermarkinsert");
             }
             catch (Exception ex)
             {
-                return Ok(null);
+                return Problem(ex.Message, "watermarkinsert");
             }
         }
 
         [HttpPost("remove")]
-        public IActionResult RemoveWaterMark()
+        public IActionResult RemoveWaterMark([FromBody] JObject rqhdr)
         {
             try
             {
+                string sourcefilepath = rqhdr["sourcefilepath"] != null ? rqhdr["sourcefilepath"].ToString() : "";
+                string destfilepath = rqhdr["destfilepath"] != null ? rqhdr["destfilepath"].ToString() : "";
+                if (!string.IsNullOrEmpty(sourcefilepath) && !string.IsNullOrEmpty(destfilepath) && System.IO.File.Exists(sourcefilepath))
+                {
+                    setLicense();
+                    var doc = new Document(sourcefilepath);
+                    foreach (HeaderFooter hf in doc.GetChildNodes(NodeType.HeaderFooter, true))
+                        foreach (Shape shape in hf.GetChildNodes(NodeType.Shape, true))
+                            // if (shape.Name.Contains("WaterMark") || shape.TextPath.Text.Contains("WaterMark")) // WORDSNET-15559
+                            shape.Remove();
 
-                string sourceFileName = @"C:\Users\Mohd\Source\Repos\WaterMark.Apose\WaterMark.Apose\download\demo222.docx";
-
-                string destFileName = @"C:\Users\Mohd\Source\Repos\WaterMark.Apose\WaterMark.Apose\download\demo_removed.docx";
-
-                var doc = new Document(sourceFileName);
-                foreach (HeaderFooter hf in doc.GetChildNodes(NodeType.HeaderFooter, true))
-                    foreach (Shape shape in hf.GetChildNodes(NodeType.Shape, true))
-                        // if (shape.Name.Contains("WaterMark") || shape.TextPath.Text.Contains("WaterMark")) // WORDSNET-15559
-                        shape.Remove();
-
-
-
-                doc.Save(destFileName);
-                return Ok(null);
+                    doc.Save(destfilepath);
+                    return Ok("Succes");
+                }
+                return Problem("Invalid Paramters", "watermarkinsert");
             }
             catch (Exception ex)
             {
-                return Ok(null);
+                return Ok(ex.Message);
             }
+        }
+        public static bool setLicense()
+        {
+            bool result = false;
+            try
+            {
+                using (StreamReader sr = System.IO.File.OpenText("asset/com.aspose.words.lic_2999.xml"))
+                {
+
+                    License asposeLicense = new License();
+                    asposeLicense.SetLicense(sr.BaseStream);
+                }
+            }
+            catch (Exception e)
+            {
+
+            }
+            return result;
         }
         private static void InsertWatermarkIntoHeader(Paragraph watermarkPara, Section sect, HeaderFooterType headerType)
         {
